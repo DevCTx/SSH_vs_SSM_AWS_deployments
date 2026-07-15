@@ -1,0 +1,162 @@
+#!/usr/bin/env groovy
+//
+// Jenkinsfile
+//
+// This project uses a limited shared library within the project scope only
+
+def GIT_SHARED_LIB = "https://github.com/DevCTx/jenkins-limited-shared-library.git"
+def GIT_PROJECT_URL = "https://github.com/DevCTx/DevOps.git"
+def APP_DIR = "PART3 - Core/9. AWS Services/jma-ssm-ecr-ec2"
+
+
+// This tells Jenkins to download a Shared Library from GitHub before running this pipeline
+library identifier: "jenkins-limited-shared-library@main", 
+    retriever: modernSCM([
+        $class: "GitSCMSource", 
+        remote: GIT_SHARED_LIB,
+        credentialsId: "github-token"
+    ])
+
+
+pipeline {
+
+	agent none
+
+    options {
+        skipDefaultCheckout(true)       // disable the automatic checkout into each step
+        preserveStashes(buildCount: 5)  // to activate the restart from stage with stashes preserved
+    }
+
+    environment {
+        APP_IMAGE_NAME = 'demo-java-app'
+        APP_VERSION = '3.0'
+        APP_HOST_PORT = '3080'
+        APP_CONTAINER_PORT = '3080'
+        APP_CONTAINER_NAME = 'java-app'        
+        AWS_DEFAULT_REGION = 'eu-west-3'
+    }
+
+    stages {
+
+        stage('Init env') {
+            agent { label 'docker-agent' }
+
+            steps {
+                script {
+                    // Only at this step to be sure to get the build version
+                    env.APP_IMAGE_TAG = "${env.APP_VERSION}.${env.BUILD_NUMBER}"
+                }
+            }            
+
+            post { always { cleanWs() } }   // Clean Workspace
+        }
+
+        stage('Checkout SCM') {
+            agent { label 'docker-agent' }
+
+            steps {
+                checkout([
+                  $class: 'GitSCM',
+                  branches: [[name: 'jenkins-jobs']],
+                  userRemoteConfigs: [[url: GIT_PROJECT_URL ]],
+                  extensions: [
+                    [$class: 'SparseCheckoutPaths', sparseCheckoutPaths: [[$class: 'SparseCheckoutPath', path: "${APP_DIR}/"]]]
+                  ]
+                ])
+
+                stash name: 'sources', includes: "${APP_DIR}/**"
+            }
+
+            post { always { cleanWs() } }   // Clean Workspace
+        }
+        
+        stage("build jar") {
+            agent { label 'maven-agent' }
+
+            when { expression { env.BRANCH_NAME == "jenkins-jobs" } }  //env.GIT_NAME == "origin/jenkins-jobs" in single pipeline
+            
+            steps {
+                unstash 'sources'
+
+                script {
+                    dir("${APP_DIR}/") {
+                        // build maven java app
+                        localBuildJar()  // calls the Library function
+                    }
+                }
+
+                stash name: 'app_files', includes: "${APP_DIR}/target/*.jar,${APP_DIR}/Dockerfile,${APP_DIR}/docker-compose.yaml"
+            }
+
+            post { always { cleanWs() } }   // Clean Workspace
+        }
+
+        stage("build and push image") {
+            agent { label 'docker-agent' }
+
+            when { expression { env.BRANCH_NAME == "jenkins-jobs" } }  //env.GIT_NAME == "origin/jenkins-jobs" in single pipeline
+
+            steps {
+                unstash 'app_files'
+
+                script {
+                    dir("${APP_DIR}/") {
+                        // build and push docker image on docker hub
+                        ecrBuildAndPushImageSSM() // calls the Library function
+                    }
+                }
+            }
+
+            post { always { cleanWs() } }   // Clean Workspace
+        }
+
+        stage("deploy") {
+            agent { label 'aws-agent' }
+        
+            when { expression { env.BRANCH_NAME == "jenkins-jobs" } }  //env.GIT_NAME == "origin/jenkins-jobs" in single pipeline
+            steps {
+                unstash 'app_files'
+
+                script {
+                    dir("${APP_DIR}/") {
+                        // Deploy by copying docker-compose.yaml
+                        ec2DeployDockerComposeSSM()
+                    }
+                }
+            }
+
+            post { always { cleanWs() } }   // Clean Workspace
+        }
+        
+        stage("cleanup EC2 Images") {
+            agent { label 'aws-agent' }
+
+            when { expression { env.BRANCH_NAME == "jenkins-jobs" } }  //env.GIT_NAME == "origin/jenkins-jobs" in single pipeline
+            steps {
+                script {
+                    // clean docker image on AWS EC2 instance server with SSM
+                    ec2CleanImageExceptTagSSM()
+
+                    // clean docker image on AWS ECR repository server with SSM
+                    ecrCleanImageExceptTagSSM()
+                }
+            }
+
+            post { always { cleanWs() } }   // Clean Workspace
+        }
+
+        stage("cleanup local and DockerHub Images") {
+            agent { label 'docker-agent' }
+
+            when { expression { env.BRANCH_NAME == "jenkins-jobs" } }  //env.GIT_NAME == "origin/jenkins-jobs" in single pipeline
+            steps {
+                script {
+                    // clean docker image on Jenkins server
+                    localCleanImageExceptTag()
+                }
+            }
+  
+            post { always { cleanWs() } }   // Clean Workspace
+        }
+    }
+} 

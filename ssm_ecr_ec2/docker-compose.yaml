@@ -1,0 +1,9 @@
+services:
+
+    java-maven-app:
+        container_name: ${CONTAINER_NAME}
+        image: ${IMAGE_NAME}:${IMAGE_TAG}
+        restart: unless-stopped
+        ports:
+            - "${HOST_PORT}:${CONTAINER_PORT}"
+

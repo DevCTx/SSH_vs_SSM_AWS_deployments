@@ -60,7 +60,7 @@ git commit -m "Initial commit"
 git branch -M main
 
 # Use your GitHub Account 
-env gh repo create <your GitHub account>/SSH_vs_SSM_AWS_Deployments \
+env gh repo create <your_GitHub_account>/SSH_vs_SSM_AWS_Deployments \
   --public \
   --description "Full CI/CD pipeline for a Java application: triggered by a GitHub webhook on push, built with Maven on Jenkins, automatic image tagging, push to DockerHub or AWS ECR, and deployment to AWS EC2 via SSH or SSM." \
   --source=. \

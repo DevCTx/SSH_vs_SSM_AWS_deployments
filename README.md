@@ -1,12 +1,41 @@
-### This repo compares SSH and SSM for AWS Deployements 
+### This repo compares SSH and SSM for AWS Deployments with 2 pipelines
 
-with 2 differents pipelines : ssh-dockerhub-ec2 and ssm-ecr-ec2 on a Jenkins server
+This first one: **ssh-dockerhub-ec2**
+
+- fetches the **Java App** sources from **GitHub** when triggered by a `git push` webhook
+- builds the source with **Maven** on a **Jenkins** server
+- builds a **Docker** image and pushes it to **Docker Hub**
+- deploys this image on an **AWS EC2 instance**, pulling it from **Docker Hub** by transferring a script and variables via **SSH**
+- allows the user to access the **Java app** on **EC2** via the **internet**
 
 **ssh-dockerhub-ec2-architecture** :
 ![ssh-dockerhub-ec2-architecture](images/ssh-dockerhub-ec2-architecture.png)
 
+The second: **ssm-ecr-ec2**
+
+- fetches the **Java App** sources from **GitHub** when triggered by a `git push` webhook
+- builds the source with **Maven** on a **Jenkins** server
+- builds a **Docker** image and pushes it to **AWS ECR**
+- generates a `docker-compose.yaml` on the fly and deploys it on an **AWS EC2 instance** via **AWS SSM**, with **no SSH key** or **open SSH port** required — authentication relies entirely on the Jenkins server's **IAM role** only
+- allows the user to access the **Java app** on **EC2** via the **internet**
+
 **ssm-ecr-ec2-architecture** :
 ![ssm-ecr-ec2-architecture](images/ssm-ecr-ec2-architecture.png)
+
+---
+### To test these pipelines, it requires some infra configurations :
+1. **Fork or duplicate this repo** on your own account
+2. **Prepare GitHub** : token for Jenkins and env vars
+3. **Prepare DockerHub** : token for Jenkins and env vars
+3. **Prepare a Server** with **Jenkins as controller** and **4 docker agents**
+4. **Prepare the instances** receiving the app on **AWS**
+5. **Prepare Jenkins** to be accessible from **GitHub** for webhook
+
+I tried to automate this as much as possible while keeping a minimum of steps and control to make it easier to understand.
+
+If you appreciate this work, please **follow** and **star this repo**. **Thanks!**
+
+---
 
 
 # 1. Fork or Create a New Repository on GitHub
@@ -284,58 +313,3 @@ This script will :
 ### *On internet, you should see*
 ![java-app-web](images/java-app-web.png)
 
----
----
-
-### 3.2 Or automatically set the webhook
-
-Use the `cloudflared_local_tunnel.sh` script to **install Cloudflare** and **create a local tunnel** making **Jenkins** available from internet and automatically creates or updates a GitHub webhook pointing to this Jenkins instance.
-
-**Save the GitHub Token** into a **.env** file with your GitHub account and repo: 
-
-and launch
-```
-./setup_github_webhook.sh
-```
-
-The script will ask: `Is Jenkins on a public IP reachable from GitHub? [y/N]`
-
-If you answer `Yes`, the script:
-- Detects your public IP.
-- Assumes Jenkins is available on: `http://<jenkins-ip>:8080`
-- Creates or updates the GitHub webhook.
-
-If you answer `No`, the script:
-- Starts an anonymous Cloudflare Tunnel.
-- Retrieves the generated https://*.trycloudflare.com URL.
-- Points the GitHub webhook to that URL.
-- Displays the tunnel process ID.
-
-Notes : **Anonymous Cloudflare Tunnel URLs are temporary**.
-
-Each time the tunnel restarts, a new URL is generated. Simply rerun this script to update the GitHub webhook with the new address.
-
-If Jenkins is permanently accessible from a public IP or domain name, no rerun is required unless the endpoint changes.
-
-### 4. Use in pipeline
-
-Select this credential as the Git source : Jenkins can then scan the repository and automatically launch the pipeline.
-
-Note: the webhook itself (GitHub → Jenkins) does not require a token; the token is used to clone/scan the repo and to update the source if needded (tag versioning).
-
-
---------------------
-
-> *Manage Jenkins → Credentials → System → Global → Add*
-
-- **Kind**: Username with password
-- **username** = `<your GitHub login>`, **password** = `<github_pat_xxx>`
-- **ID**: `github-token` 
-
-### 3.1 Create the webhook manually on GitHub if Jenkins is public
-
-> *Repo → Settings → Webhooks → Add webhook*
-- **Payload URL**: `http://<jenkins-ip>:8080/github-webhook/`
-- **Content type**: `application/json`
-- **Events**: `Just the push event`
-- **Active**: *checked*

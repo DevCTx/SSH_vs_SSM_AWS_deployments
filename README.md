@@ -23,6 +23,7 @@ The second: **ssm-ecr-ec2**
 ![ssm-ecr-ec2-architecture](images/ssm-ecr-ec2-architecture.png)
 
 ---
+
 ## To test these pipelines, some infrastructure setup is required:
 
 1. **Fork or duplicate this repo** to your own account

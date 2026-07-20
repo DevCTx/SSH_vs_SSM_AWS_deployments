@@ -27,11 +27,11 @@ command -v curl >/dev/null || { echo "Install curl: sudo apt install -y curl"; e
  
 read -p "Is Jenkins on a public IP reachable from GitHub? [y/N] " public
 if [[ "$public" =~ ^[Yy]$ ]]; then
-  echo ""
-  echo "Use of the local Jenkins Public IP address"
   # display the Jenkins public IP
   IP=$(curl -sf -4 ifconfig.me) || { echo "Could not fetch public IP"; exit 1; }
   BASE="http://${IP}:8080"   
+  echo ""
+  echo "Use of the local Jenkins Public IP address : $BASE"
 else
   echo ""
   echo "Creation of a public tunnel with Cloudflared"

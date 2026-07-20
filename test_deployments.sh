@@ -16,7 +16,7 @@ cd "$(dirname "$0")"
 : "${JENKINS_IP:?Set JENKINS_IP in .env first}"
 : "${DOCKER_USERNAME:?Set DOCKER_USERNAME in .env first}"
 : "${DOCKERHUB_PAT:?Set DOCKERHUB_PAT in .env first}"
-: "${EC2_IP:?Set EC2_IP in .env first}"
+: "${SSH_EC2_IP:?Set SSH_EC2_IP in .env first}"
 
 command -v jq >/dev/null || { echo "Please Install jq first (sudo apt install -y jq)"; exit 1; }
 
@@ -75,17 +75,17 @@ echo "You should see only one image"
 echo ""
 echo ""
 echo "=== Check result on EC2 ==="
-EC2_RESULT=$(ssh -o StrictHostKeyChecking=no -i "aws_ssh_ec2_install/jenkins-ec2.pem" ec2-user@$EC2_IP \
+EC2_RESULT=$(ssh -o StrictHostKeyChecking=no -i "aws_ec2_install/ssh-ec2-key.pem" ec2-user@$SSH_EC2_IP \
   "docker inspect --format='{{.Config.Image}}' java-app")
 echo ""
 echo "EC2 container image tag : $EC2_RESULT"
 echo "You should see only one image"
 echo ""
-echo "To inspect manually: ssh -i aws_ssh_ec2_install/jenkins-ec2.pem ec2-user@$EC2_IP \"docker ps\" "
+echo "To inspect manually: ssh -i aws_ec2_install/ssh-ec2-key.pem ec2-user@$SSH_EC2_IP \"docker ps\" "
 echo ""
 echo ""
 echo "=== Check the Java App ==="
 echo ""
-echo "Open http://$EC2_IP:3080"
+echo "Open http://$SSH_EC2_IP:3080"
 echo "You should see a message from the Java App"
 echo ""

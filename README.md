@@ -5,7 +5,7 @@ This first one: **ssh-dockerhub-ec2**
 - fetches the **Java App** sources from **GitHub** when triggered by a `git push` webhook
 - builds the source with **Maven** on a **Jenkins** server
 - builds a **Docker** image and pushes it to **Docker Hub**
-- deploys this image on an **AWS EC2 instance**, pulling it from **Docker Hub** by transferring a script and variables via **SSH**
+- deploy this image to an **AWS EC2 instance** by transferring a **script** and **variables** via **SSH** that allow the image to be pulled from **Docker Hub**
 - allows the user to access the **Java app** on **EC2** via the **internet**
 
 **ssh-dockerhub-ec2-architecture** :
@@ -203,16 +203,24 @@ chmod 744 ./aws_ssh_ec2_install/aws_ssh_ec2_install.sh
 ./aws_ssh_ec2_install/aws_ssh_ec2_install.sh
 ```
 
-This script will :
-- create an **SSH key** `jenkins-ec2.pem` if missing
-- create a **Security Group** and open ports **22** (for your IP) and **3080** (public)
-- calculate the **minimal disk size** required for the app on an **Amazon Linux 2023** instance
-- create an **EC2 instance** with an **Amazon Linux 2023 AMI** in the **eu-west-3** Region (Paris), on a **t3.micro** configuration (2 vCPU, 1 GiB RAM, Free Tier compatible) and the **appropriate volume size**
-- install **Docker** and start the daemon on boot
-- retrieve the **public IP** and set it into the **.env** file as **EC2_IP**
+This script will create **3 EC2 instances**:
+- **1 to test the SSH protocol** : SSH-EC2
+- **2 to test the SSM protocol** : SSM-EC2 + Jenkins-EC2
+
+In details, it will:
+- Create an **SSH key** (.pem) if missing for **SSH-EC2** and **Jenkins-EC2** 
+- Create an **IAM role** instead for **SSM-EC2** with no key and no open SSH port
+- Create a **Security Group** for each instance, with only the required ports opened:
+  - **SSH-EC2**: 22 (your IP only) + 3080 (public, web app)
+  - **Jenkins-EC2**: 22 (your IP only) + 8080 (web UI + GitHub webhook)
+  - **SSM-EC2**: 3080 only (public, web app) — no SSH port at all
+- Calculate the **minimal disk size** required for the app on an **Amazon Linux 2023** instance
+- Create each **EC2 instance** in the **eu-west-3** Region (Paris), on a **t3.micro** configuration (2 vCPU, 1 GiB RAM, Free Tier compatible)and the **appropriate volume size**
+- Install **Docker** and start the daemon on boot
+- Retrieve the **public IP** of each instance and set it into the **.env** file as `SSH_EC2_IP`,`JENKINS_EC2_IP`, and `SSM_EC2_IP`
 
 
-### 5.2 Install the Jenkins Server with an SSH environment 
+### 5.2 Install the Jenkins Server on local for an SSH environment
 
 ```
 chmod 744 ./jenkins_install/docker_jenkins_platform_install.sh
@@ -237,7 +245,7 @@ This script will :
 
 - build and tests the **agent images** (docker-agent, maven-agent, aws-agent) and pull the inbound agent for the base-agent image
 
-- check if the `jenkins-ec2.pem`SSH key is available
+- check if the `ssh-ec2-key.pem`SSH key is available
 
 - Then **build the comtroller** running the **JCasc** `jenkins-config.yaml` file to: 
   
@@ -250,7 +258,7 @@ This script will :
     - **aws-agent**: for deploying to the AWS EC2 instance via SSH
   
   - install the required **credentials** (GitHub Token, DockerHub, EC2 IP and SSH Key)
-    > *The `jenkins-ec2.pem` SSH key is mounted as **volume** and used as **secret** into Jenkins (not stored in .env) because its multi-line format would break the .env parsing*
+    > *The `ssh-ec2-key.pem` SSH key is mounted as **volume** and used as **secret** into Jenkins (not stored in .env) because its multi-line format would break the .env parsing*
 
   - pre-configure **2 operational pipelines** :
   
@@ -294,7 +302,7 @@ chmod 744 ./test_deployments.sh
 
 This script will : 
 
-- **Load env**: DOCKER_USERNAME, DOCKERHUB_PAT, EC2_IP from .env;
+- **Load env**: DOCKER_USERNAME, DOCKERHUB_PAT, APP_SSH_IP from .env;
 - **Get the last tag** from DockerHub before the push
 - **Trigger the pipeline** with an empty commit and git push
 - **Wait for the build on Jenkiins and new tag on Docker Hub**
@@ -304,11 +312,25 @@ This script will :
 ### *On Jenkins, you should see*
 ![ssh-dockerhub-ec2](images/ssh-dockerhub-ec2-jenkins.png)
 
+The [`Jenkinsfile`](./ssh_dockerhub_ec2/Jenkinsfile) uses the **shared library** [`DevCTx/jenkins-limited-shared-library`](https://github.com/DevCTx/jenkins-limited-shared-library) and the following **functions** :
+- [`localBuildJar.groovy`](https://github.com/DevCTx/jenkins-limited-shared-library/blob/main/vars/localBuildJar.groovy)
+- [`dockerhubBuildAndPushImage.groovy`](https://github.com/DevCTx/jenkins-limited-shared-library/blob/main/vars/dockerhubBuildAndPushImage.groovy)
+- [`ec2DeployDockerCmdSSH.groovy`](https://github.com/DevCTx/jenkins-limited-shared-library/blob/main/vars/ec2DeployDockerCmdSSH.groovy)
+- [`ec2CleanImageExceptTagSSH.groovy`](https://github.com/DevCTx/jenkins-limited-shared-library/blob/main/vars/ec2CleanImageExceptTagSSH.groovy)
+- [`dockerhubCleanImageExceptTag.groovy`](https://github.com/DevCTx/jenkins-limited-shared-library/blob/main/vars/dockerhubCleanImageExceptTag.groovy)
+- [`localCleanDockerhubImageExceptTag.groovy`](https://github.com/DevCTx/jenkins-limited-shared-library/blob/main/vars/localCleanDockerhubImageExceptTag.groovy)
+
+
 ### *On DockerHub, you should see*
 ![demo-java-app](images/demo-java-app-dockerhub.png)
 
 ### *On EC2, you should see*
 ![java-app-docker-ec2](images/java-app-docker-ec2.png)
+with
+```
+ssh -i aws_ssh_ec2_install/ssh-ec2-key.pem ec2-user@$APP_SSH_IP "docker ps" 
+```
+
 
 ### *On internet, you should see*
 ![java-app-web](images/java-app-web.png)

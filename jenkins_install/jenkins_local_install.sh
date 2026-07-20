@@ -49,25 +49,29 @@ ENV_FILE="$(pwd)/../.env"
 set -a; source "$ENV_FILE"; set +a   # reload the .env for the new vars
 
 ####################################################################################################
-# PREREQUISITES : Install Docker on the host
+# PREREQUISITES : Install Docker on the host if it does not exist yet
 ####################################################################################################
 
 command -v docker >/dev/null || {
-	apt-get update
-	apt-get install -y ca-certificates curl gnupg
-	install -m 0755 -d /etc/apt/keyrings
-	curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-		| gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-	chmod a+r /etc/apt/keyrings/docker.gpg
+  if [ -f /etc/debian_version ]; then
+    apt-get update
+    apt-get install -y ca-certificates curl gnupg
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+      | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
 
-	# Dépôt Docker : use VERSION_CODENAME=zena or UBUNTU_CODENAME=noble (Ubuntu) according to your sys
-	echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-	https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) stable" \
-	  > /etc/apt/sources.list.d/docker.list
+    # Dépôt Docker : use VERSION_CODENAME=zena or UBUNTU_CODENAME=noble (Ubuntu) according to your sys
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+    https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) stable" \
+      > /etc/apt/sources.list.d/docker.list
 
-	# Installation
-	apt-get update
-	apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    # Installation
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  else
+    yum install -y docker
+  fi
 }
 # Start and Enable Docker Daemon on startup
 systemctl enable --now docker
@@ -151,7 +155,7 @@ credentials:
           - string: { scope: GLOBAL, id: "DOCKER_USERNAME", secret: "${DOCKER_USERNAME}" }
           - string: { scope: GLOBAL, id: "dockerhub-pat",   secret: "${DOCKERHUB_PAT}" }
           # EC2 public IP (secret text)
-          - string: { scope: GLOBAL, id: "MY_INSTANCE_EC2_IP", secret: "${EC2_IP}" }
+          - string: { scope: GLOBAL, id: "MY_INSTANCE_EC2_IP", secret: "${SSH_EC2_IP}" }
           # EC2 SSH private key: read from the .pem mounted read-only into the controller.
           - basicSSHUserPrivateKey:
               scope: GLOBAL
@@ -361,13 +365,13 @@ services:
       GITHUB_JENKINS_TOKEN: "${GITHUB_JENKINS_TOKEN}"
       DOCKER_USERNAME: "${DOCKER_USERNAME}"
       DOCKERHUB_PAT: "${DOCKERHUB_PAT}"
-      EC2_IP: "${EC2_IP}"
+      SSH_EC2_IP: "${SSH_EC2_IP}"
       JENKINS_ADMIN_USER: "${JENKINS_ADMIN_USER}"
       JENKINS_ADMIN_PASSWORD: "${JENKINS_ADMIN_PASSWORD}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock  # Access to the host's Docker daemon
       - jenkins_home:/var/jenkins_home	           # persists Jenkins data
-      - ../../aws_ssh_ec2_install/jenkins-ec2.pem:/run/secrets/ec2_key.pem:ro
+      - ../../aws_ec2_install/ssh-ec2-key.pem:/run/secrets/ec2_key.pem:ro
 
 volumes:
   jenkins_home: {}		 # {} = explicite empty object
@@ -438,20 +442,41 @@ test_agent jenkins-aws-agent    "aws --version"
 echo ""
 echo "=== Build Controller ==="
 
-PEM_FILE="../../aws_ssh_ec2_install/jenkins-ec2.pem"
+PEM_FILE="../../aws_ec2_install/ssh-ec2-key.pem"
 if [ ! -f "$PEM_FILE" ]; then
-  echo "$PEM_FILE not found. Please run aws_ssh_ec2_install.sh before."
+  echo "$PEM_FILE not found. Please run aws_ec2_install.sh before."
   exit 1
 fi
 
 docker compose up -d --build
 
 echo ""
-echo "Waiting for the Jenkins controller to start..."
-
+echo "Waiting 15s for the Jenkins controller to start..."
 sleep 15
 
-JENKINS_IP="$(hostname -I | awk '{print $1}')"
+####################################################################################################
+# Detect if the script is running on a AWS instance 
+####################################################################################################
+IS_AWS=false
+
+echo ""
+echo "Detect if the script is running on a AWS instance ..."
+
+# Get AWS metadata token (IMDSv2)
+# 169.254.169.254 is a special address accessible only from the server
+TOKEN=$(curl -s --max-time 1 -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null)
+[ -n "$TOKEN" ] && IS_AWS=true
+
+if $IS_AWS; then
+  echo "Detected: running on AWS EC2"
+  JENKINS_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+    http://169.254.169.254/latest/meta-data/public-ipv4)
+else
+  echo "Detected: running locally"
+  JENKINS_IP="$(hostname -I | awk '{print $1}')"
+fi
+
 set_env JENKINS_IP "$JENKINS_IP"
 
 echo ""

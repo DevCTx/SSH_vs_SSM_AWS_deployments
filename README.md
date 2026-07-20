@@ -2,11 +2,11 @@
 
 This first one: **ssh-dockerhub-ec2**
 
-- fetches the **Java App** sources from **GitHub** when triggered by a `git push` webhook
+- fetches the **Java app** sources from **GitHub** when triggered by a `git push` webhook
 - builds the source with **Maven** on a **Jenkins** server
 - builds a **Docker** image and pushes it to **Docker Hub**
-- deploy this image to an **AWS EC2 instance** by transferring a **script** and **variables** via **SSH** that allow the image to be pulled from **Docker Hub**
-- allows the user to access the **Java app** on **EC2** via the **internet**
+- deploys this image to an **AWS EC2 instance** by transferring a **script** and **variables** via **SSH** that allow the image to be pulled from **Docker Hub**
+- lets the user to access the **Java app** on **EC2** over the **internet**
 
 **ssh-dockerhub-ec2-architecture** :
 ![ssh-dockerhub-ec2-architecture](images/ssh-dockerhub-ec2-architecture.png)
@@ -17,7 +17,7 @@ The second: **ssm-ecr-ec2**
 - builds the source with **Maven** on a **Jenkins** server
 - builds a **Docker** image and pushes it to **AWS ECR**
 - generates a `docker-compose.yaml` on the fly and deploys it on an **AWS EC2 instance** via **AWS SSM**, with **no SSH key** or **open SSH port** required — authentication relies entirely on the Jenkins server's **IAM role**
-- allows the user to access the **Java app** on **EC2** via the **internet**
+- lets the user to access the **Java app** on **EC2** over the **internet**
 
 **ssm-ecr-ec2-architecture** :
 ![ssm-ecr-ec2-architecture](images/ssm-ecr-ec2-architecture.png)

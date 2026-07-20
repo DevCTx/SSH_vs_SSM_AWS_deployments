@@ -1,4 +1,4 @@
-### This repo compares SSH and SSM for AWS Deployments with 2 pipelines
+## This repo compares SSH and SSM for AWS Deployments with 2 pipelines
 
 This first one: **ssh-dockerhub-ec2**
 
@@ -24,7 +24,7 @@ The second: **ssm-ecr-ec2**
 
 ---
 
-## To test these pipelines, some infrastructure setup is required:
+## To test these pipelines, some infrastructure setup is required:
 
 1. **Fork or duplicate this repo** to your own account
 2. **Prepare GitHub**: a token for Jenkins and the related env vars
